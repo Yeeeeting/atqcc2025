@@ -308,11 +308,15 @@
     }
 
     async function handleSubmitVote() {
+      voteValidationMsg.textContent = '';
       if (!voterName) {
         voteValidationMsg.textContent = '請先輸入姓名並開始投票。';
         return;
       }
-      voteValidationMsg.textContent = '';
+      if (!userId) {
+        voteValidationMsg.textContent = '系統正在連線中，請稍候再試。';
+        return;
+      }
       const formData = new FormData(votingForm);
       const currentScores = [];
       let isValid = true;
@@ -331,6 +335,8 @@
           scores: currentScores,
           createdAt: serverTimestamp(),
         });
+        voteValidationMsg.textContent = '投票已送出，感謝您的參與！';
+        disableVotingForm();
       } catch (error) {
         console.error('提交投票失敗:', error);
         voteValidationMsg.textContent = '提交失敗，請稍後再試。';
