@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>方策共識投票 (即時版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f0f4f8;
+        }
+        .table-cell-sticky {
+            position: sticky;
+            left: 0;
+            background-color: white;
+            z-index: 10;
+        }
+        .group-row .table-cell-sticky {
+            background-color: #f1f5f9;
+        }
+        .table-header-sticky {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background-color: #f8fafc; /* Ensure header has a background */
+        }
+        .radio-label {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #cbd5e1;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            font-weight: 500;
+        }
+        input[type="radio"]:checked + .radio-label {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        input[type="radio"] { display: none; }
+        #name-entry-overlay, #summary-modal {
+            transition: opacity 0.3s ease-in-out;
+        }
+        .hidden-opacity, .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .form-disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Name Entry Overlay -->
+    <div id="name-entry-overlay" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md text-center">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">歡迎參與投票</h2>
+            <p class="text-gray-600 mb-6">為了記錄投票，請先輸入您的姓名。</p>
+            <input type="text" id="voter-name-input" placeholder="請在此輸入您的姓名" class="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+            <button id="start-voting-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md mt-6 text-lg">
+                開始投票
+            </button>
+            <p id="name-validation-message" class="text-red-500 mt-2 h-5"></p>
+        </div>
+    </div>
+
+    <div id="main-content" class="max-w-7xl mx-auto hidden-opacity">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">方策共識投票</h1>
+            <p class="text-gray-600 mt-2">請就各項方策的「重要性」及「效益性」進行評分 (1=低, 3=中, 5=高)</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Voting Section -->
+            <div id="voting-panel" class="bg-white p-6 rounded-2xl shadow-lg">
+                <div class="flex items-center justify-between mb-4">
+                     <h2 class="text-2xl font-bold text-gray-700">投票區</h2>
+                     <div id="voter-name-display" class="text-xl font-semibold bg-blue-500 text-white px-4 py-2 rounded-lg">
+                        你好！
+                    </div>
+                </div>
+
+                <div class="overflow-auto max-h-[70vh] pr-2">
+                    <form id="voting-form">
+                        <table class="w-full border-collapse text-sm md:text-base">
+                            <thead class="table-header-sticky">
+                                <tr>
+                                    <th rowspan="2" class="p-3 text-left border-b-2 border-gray-200 table-cell-sticky align-bottom">方策項目</th>
+                                    <th class="p-3 text-center border-b border-gray-200 bg-blue-50" colspan="3">重要性</th>
+                                    <th rowspan="2" class="border-b-2 border-gray-200 border-r-2 border-gray-300"></th> <!-- Vertical Line -->
+                                    <th class="p-3 text-center border-b border-gray-200 bg-green-50" colspan="3">效益性</th>
+                                </tr>
+                                <tr>
+                                    <!-- Sub-headers for Importance -->
+                                    <th class="p-2 text-center border-b-2 border-gray-200 font-medium text-gray-600 bg-blue-50">1</th>
+                                    <th class="p-2 text-center border-b-2 border-gray-200 font-medium text-gray-600 bg-blue-50">3</th>
+                                    <th class="p-2 text-center border-b-2 border-gray-200 font-medium text-gray-600 bg-blue-50">5</th>
+                                    <!-- Sub-headers for Effectiveness -->
+                                    <th class="p-2 text-center border-b-2 border-gray-200 font-medium text-gray-600 bg-green-50">1</th>
+                                    <th class="p-2 text-center border-b-2 border-gray-200 font-medium text-gray-600 bg-green-50">3</th>
+                                    <th class="p-2 text-center border-b-2 border-gray-200 font-medium text-gray-600 bg-green-50">5</th>
+                                </tr>
+                            </thead>
+                            <tbody id="voting-table-body">
+                                <!-- Rows will be inserted by JavaScript -->
+                            </tbody>
+                        </table>
+                    </form>
+                </div>
+                 <div class="mt-6 text-center">
+                    <button id="submit-vote-btn" class="w-full md:w-auto bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        送出我的投票
+                    </button>
+                    <p id="vote-validation-message" class="text-red-500 mt-2 h-5"></p>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-700">即時結果</h2>
+                    <button id="show-summary-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors duration-300 shadow-sm">
+                        查看結果總結
+                    </button>
+                </div>
+                <div class="mb-4 text-center bg-gray-100 p-4 rounded-lg">
+                    <p class="text-lg font-semibold">已完成投票人數</p>
+                    <p class="text-3xl font-bold text-green-600"><span id="completed-voters-count">0</span> / 10</p>
+                </div>
+                 <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2">已完成投票者：</h3>
+                    <div id="completed-voters-list" class="flex flex-wrap gap-2 text-sm">
+                        <!-- Voter names will be inserted here -->
+                        <span class="text-gray-500">尚無人投票</span>
+                    </div>
+                </div>
+                <div class="overflow-auto max-h-[60vh]">
+                    <table class="w-full border-collapse text-sm md:text-base">
+                        <thead class="table-header-sticky">
+                            <tr>
+                                <th class="p-3 text-left border-b-2 border-gray-200 table-cell-sticky">方策項目</th>
+                                <th class="p-3 text-center border-b-2 border-gray-200 bg-blue-100 text-blue-800">重要性總分</th>
+                                <th class="p-3 text-center border-b-2 border-gray-200 bg-green-100 text-green-800">效益性總分</th>
+                                <th class="p-3 text-center border-b-2 border-gray-200 bg-gray-200 text-gray-900 font-bold">總分</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body">
+                            <!-- Rows will be inserted by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Summary Modal -->
+    <div id="summary-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">投票結果總結 (依總分排序)</h2>
+                <button id="close-summary-btn" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <div id="summary-content" class="overflow-y-auto">
+                <!-- Summary content will be injected here -->
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {};
+        // -----------------------------------------
+
+        const strategies = [
+            { group: '建立EPA框架', item: '由教學小組(含學員)共同凝聚共識' },
+            { group: '建立EPA框架', item: '外部專家提供指導及建議' },
+            { group: '連續多點評量', item: '依急診、病房、門診等臨床場域排定評量節點' },
+            { group: '連續多點評量', item: '引入護理師/學長姐多源回饋' },
+            { group: '連續多點評量', item: '建立標準化評量觸發流程' },
+            { group: '連續多點評量', item: '開發智能提醒功能' },
+            { group: 'ILP進行個別化指導', item: '制定 ILP 樣板(含學習目標、時程、檢核點)' },
+            { group: 'ILP進行個別化指導', item: '辦理 ILP 導師培訓課程(目標設定與回饋技巧)' },
+            { group: 'ILP進行個別化指導', item: '編製導師操作手冊與常見問題集' },
+            { group: '認識CBME', item: '定期舉辦CBME核心概念共識工作坊，建立評量標準' },
+            { group: '認識CBME', item: '設置CBME教學支持系統' },
+            { group: '定期總結性評量', item: '制定標準化CCC會議運作規範' },
+            { group: '定期總結性評量', item: '設置CBME教學輔導小組，提供諮詢與支持' },
+            { group: '定期總結性評量', item: '將CCC功能納入PGY訓練手冊或教學制度中(職前訓練)' },
+        ];
+
+        // --- Global Variables ---
+        let app, auth, db, userId, voterName;
+        let latestResults = [];
+        let completedVoterNames = new Set(); // Use voter name for uniqueness
+        const SCORES = [1, 3, 5];
+        const TOTAL_VOTERS = 10;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-poll-app';
+        const COLLECTION_NAME = `artifacts/${appId}/public/data/votes_poll_1`; 
+
+        // --- DOM Elements ---
+        const nameOverlay = document.getElementById('name-entry-overlay');
+        const mainContent = document.getElementById('main-content');
+        const nameInput = document.getElementById('voter-name-input');
+        const startBtn = document.getElementById('start-voting-btn');
+        const nameValidationMsg = document.getElementById('name-validation-message');
+        const voterNameDisplay = document.getElementById('voter-name-display');
+        const votingForm = document.getElementById('voting-form');
+        const submitBtn = document.getElementById('submit-vote-btn');
+        const voteValidationMsg = document.getElementById('vote-validation-message');
+        const completedVotersCount = document.getElementById('completed-voters-count');
+        const completedVotersList = document.getElementById('completed-voters-list');
+        const showSummaryBtn = document.getElementById('show-summary-btn');
+        const summaryModal = document.getElementById('summary-modal');
+        const closeSummaryBtn = document.getElementById('close-summary-btn');
+        const summaryContent = document.getElementById('summary-content');
+
+        // --- Initialization ---
+        function initialize() {
+            renderVotingTable();
+            renderResultsTable(); // Initial render with zeros
+            startBtn.addEventListener('click', handleStartVoting);
+            submitBtn.addEventListener('click', handleSubmitVote);
+            showSummaryBtn.addEventListener('click', showSummary);
+            closeSummaryBtn.addEventListener('click', () => summaryModal.classList.add('hidden'));
+            summaryModal.addEventListener('click', (e) => {
+                if (e.target === summaryModal) {
+                    summaryModal.classList.add('hidden');
+                }
+            });
+
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                     throw new Error("Firebase config is not available.");
+                }
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setupAuthListener();
+            } catch (error) {
+                console.error("Firebase 初始化失敗:", error);
+                alert("無法連接到投票伺服器，請確認 Firebase 設定是否正確。");
+            }
+        }
+
+        function setupAuthListener() {
+            onAuthStateChanged(auth, user => {
+                if (user) {
+                    userId = user.uid; // Still useful to have, even if not for uniqueness check
+                    setupRealtimeListener();
+                } else {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        signInWithCustomToken(auth, __initial_auth_token).catch(error => {
+                             console.error("使用自訂權杖登入失敗:", error);
+                        });
+                    } else {
+                        signInAnonymously(auth).catch(error => {
+                            console.error("匿名登入失敗:", error);
+                        });
+                    }
+                }
+            });
+        }
+        
+        function setupRealtimeListener() {
+            const q = query(collection(db, COLLECTION_NAME));
+            onSnapshot(q, (querySnapshot) => {
+                processVoteData(querySnapshot);
+            }, (error) => {
+                console.error("即時監聽失敗:", error);
+            });
+        }
+
+        // --- Rendering Functions ---
+        function renderVotingTable() {
+            const votingTableBody = document.getElementById('voting-table-body');
+            votingTableBody.innerHTML = ''; // Clear previous content
+            let currentGroup = "";
+            strategies.forEach((strategy, index) => {
+                if (strategy.group !== currentGroup) {
+                    currentGroup = strategy.group;
+                    const groupRow = document.createElement('tr');
+                    groupRow.className = 'group-row';
+                    groupRow.innerHTML = `<td colspan="8" class="p-3 bg-gray-100 font-bold text-gray-700 table-cell-sticky">${strategy.group}</td>`;
+                    votingTableBody.appendChild(groupRow);
+                }
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                let cells = `<td class="p-3 border-b border-gray-200 table-cell-sticky">${strategy.item}</td>`;
+                SCORES.forEach(s => { cells += `<td class="p-3 border-b border-gray-200 text-center"><input type="radio" id="imp-${index}-${s}" name="importance-${index}" value="${s}"><label for="imp-${index}-${s}" class="radio-label">${s}</label></td>`; });
+                cells += `<td class="border-b border-gray-200 border-r-2 border-gray-300"></td>`; // Separator
+                SCORES.forEach(s => { cells += `<td class="p-3 border-b border-gray-200 text-center"><input type="radio" id="eff-${index}-${s}" name="effectiveness-${index}" value="${s}"><label for="eff-${index}-${s}" class="radio-label">${s}</label></td>`; });
+                row.innerHTML = cells;
+                votingTableBody.appendChild(row);
+            });
+        }
+
+        function renderResultsTable() {
+            const resultsTableBody = document.getElementById('results-table-body');
+            resultsTableBody.innerHTML = ''; // Clear previous content
+            let currentGroup = "";
+            strategies.forEach((strategy, index) => {
+                if (strategy.group !== currentGroup) {
+                    currentGroup = strategy.group;
+                    const groupRow = document.createElement('tr');
+                    groupRow.className = 'group-row';
+                    groupRow.innerHTML = `<td colspan="4" class="p-3 bg-gray-100 font-bold text-gray-700 table-cell-sticky">${strategy.group}</td>`;
+                    resultsTableBody.appendChild(groupRow);
+                }
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-3 border-b border-gray-200 table-cell-sticky">${strategy.item}</td>
+                    <td id="res-imp-${index}" class="p-3 border-b border-gray-200 text-center font-medium text-blue-700">0</td>
+                    <td id="res-eff-${index}" class="p-3 border-b border-gray-200 text-center font-medium text-green-700">0</td>
+                    <td id="res-total-${index}" class="p-3 border-b border-gray-200 text-center font-bold text-gray-800">0</td>
+                `;
+                resultsTableBody.appendChild(row);
+            });
+        }
+
+        // --- Event Handling & Logic ---
+        function handleStartVoting() {
+            const name = nameInput.value.trim();
+            if (!name) {
+                nameValidationMsg.textContent = '請務必輸入您的姓名。';
+                return;
+            }
+            if (completedVoterNames.has(name)) {
+                nameValidationMsg.textContent = '這個姓名已經投過票了，請使用其他姓名。';
+                return;
+            }
+
+            voterName = name;
+            voterNameDisplay.textContent = `你好, ${voterName}`;
+            nameOverlay.classList.add('hidden');
+            mainContent.classList.remove('hidden-opacity');
+        }
+        
+        async function handleSubmitVote() {
+            voteValidationMsg.textContent = '';
+            const formData = new FormData(votingForm);
+            const currentScores = [];
+            let isValid = true;
+
+            for (let i = 0; i < strategies.length; i++) {
+                const importance = formData.get(`importance-${i}`);
+                const effectiveness = formData.get(`effectiveness-${i}`);
+                if (!importance || !effectiveness) {
+                    isValid = false;
+                    break;
+                }
+                currentScores.push({ importance: parseInt(importance), effectiveness: parseInt(effectiveness) });
+            }
+
+            if (!isValid) {
+                voteValidationMsg.textContent = '錯誤：尚有項目未評分，請完成所有評分。';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '正在提交...';
+
+            try {
+                await addDoc(collection(db, COLLECTION_NAME), {
+                    voterName: voterName,
+                    userId: userId,
+                    scores: currentScores,
+                    createdAt: serverTimestamp()
+                });
+            } catch (error) {
+                console.error("提交投票失敗:", error);
+                voteValidationMsg.textContent = '提交失敗，請稍後再試。';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '送出我的投票';
+            }
+        }
+
+        function processVoteData(snapshot) {
+            const results = Array.from({ length: strategies.length }, () => ({ importance: 0, effectiveness: 0 }));
+            completedVoterNames.clear(); // Clear and rebuild the global set
+
+            snapshot.forEach(doc => {
+                const vote = doc.data();
+                if (vote.scores && vote.scores.length === strategies.length && vote.voterName) {
+                    vote.scores.forEach((score, i) => {
+                        results[i].importance += score.importance;
+                        results[i].effectiveness += score.effectiveness;
+                    });
+                    completedVoterNames.add(vote.voterName);
+                }
+            });
+            
+            latestResults = results.map((res, index) => ({
+                ...strategies[index],
+                importance: res.importance,
+                effectiveness: res.effectiveness,
+                total: res.importance + res.effectiveness
+            }));
+
+            updateResultsUI(results, completedVoterNames);
+            
+            if (voterName && completedVoterNames.has(voterName)) {
+                disableVotingForm();
+            }
+        }
+        
+        function showSummary() {
+            if (latestResults.length === 0 || latestResults.every(r => r.total === 0)) {
+                summaryContent.innerHTML = '<p class="text-gray-600 text-center">目前尚無投票資料可供總結。</p>';
+            } else {
+                const sortedResults = [...latestResults].sort((a, b) => b.total - a.total);
+
+                let summaryHTML = '<ol class="space-y-4">';
+                sortedResults.forEach((res, index) => {
+                    summaryHTML += `
+                        <li class="p-4 rounded-lg border border-gray-200 ${index < 3 ? 'bg-green-50' : ''}">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-grow pr-4">
+                                    <span class="text-sm font-semibold text-gray-500">${res.group}</span>
+                                    <p class="font-semibold text-gray-800">${index + 1}. ${res.item}</p>
+                                </div>
+                                <div class="text-right ml-4 flex-shrink-0 w-24">
+                                     <p class="text-2xl font-bold text-gray-900">${res.total}</p>
+                                     <p class="text-xs text-gray-500">
+                                        重要性: <span class="font-medium text-blue-600">${res.importance}</span><br>
+                                        效益性: <span class="font-medium text-green-600">${res.effectiveness}</span>
+                                     </p>
+                                </div>
+                            </div>
+                        </li>
+                    `;
+                });
+                summaryHTML += '</ol>';
+                summaryContent.innerHTML = summaryHTML;
+            }
+            summaryModal.classList.remove('hidden');
+        }
+
+
+        function updateResultsUI(results, completedNames) {
+            completedVotersCount.textContent = completedNames.size;
+            completedVotersList.innerHTML = '';
+            if (completedNames.size > 0) {
+                 completedNames.forEach(name => {
+                    const voterTag = document.createElement('span');
+                    voterTag.className = 'bg-green-100 text-green-800 px-2.5 py-1 rounded-full';
+                    voterTag.textContent = name;
+                    completedVotersList.appendChild(voterTag);
+                });
+            } else {
+                completedVotersList.innerHTML = '<span class="text-gray-500">尚無人投票</span>';
+            }
+
+            results.forEach((res, index) => {
+                const total = res.importance + res.effectiveness;
+                document.getElementById(`res-imp-${index}`).textContent = res.importance;
+                document.getElementById(`res-eff-${index}`).textContent = res.effectiveness;
+                document.getElementById(`res-total-${index}`).textContent = total;
+            });
+        }
+
+        function disableVotingForm() {
+            votingForm.classList.add('form-disabled');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '您已完成投票';
+            submitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            submitBtn.classList.add('bg-gray-400');
+        }
+
+        // --- Start the app ---
+        document.addEventListener('DOMContentLoaded', initialize);
+    </script>
+</body>
+</html>
+
