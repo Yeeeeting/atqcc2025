@@ -164,7 +164,13 @@
     let completedVoterNames = new Set();
     const SCORES = [1, 3, 5];
     const TOTAL_VOTERS = 10;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-poll-app';
+    const rawAppId = (typeof __app_id !== 'undefined' && __app_id !== null) ? String(__app_id).trim() : '';
+    const appId = (!rawAppId || rawAppId.includes('/')) ? 'default-poll-app' : rawAppId;
+    if (!rawAppId) {
+      console.warn('偵測到缺少 __app_id，將使用預設路徑 default-poll-app。');
+    } else if (rawAppId.includes('/')) {
+      console.warn('提供的 __app_id 含有不支援的字元 "/"，將使用預設路徑 default-poll-app。');
+    }
     const COLLECTION_NAME = `artifacts/${appId}/public/data/votes_poll_1`;
 
     // ===== DOM =====
@@ -330,6 +336,7 @@
       submitBtn.disabled = true; submitBtn.textContent = '正在提交...';
       try {
         await addDoc(collection(db, COLLECTION_NAME), {
+          appId: appId,
           voterName: voterName,
           userId: userId,
           scores: currentScores,
@@ -339,7 +346,13 @@
         disableVotingForm();
       } catch (error) {
         console.error('提交投票失敗:', error);
-        voteValidationMsg.textContent = '提交失敗，請稍後再試。';
+        if (error && error.code === 'permission-denied') {
+          voteValidationMsg.textContent = '提交失敗：無法寫入資料，請確認 Firebase 安全性規則或 App Check 設定。';
+        } else if (error && error.code === 'invalid-argument') {
+          voteValidationMsg.textContent = '提交失敗：路徑設定無效，請確認 appId 設定是否正確。';
+        } else {
+          voteValidationMsg.textContent = '提交失敗，請稍後再試。';
+        }
         submitBtn.disabled = false; submitBtn.textContent = '送出我的投票';
       }
     }
