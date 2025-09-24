@@ -26,7 +26,7 @@
       <h2 class="text-2xl font-bold text-gray-800 mb-4">歡迎參與投票</h2>
       <p class="text-gray-600 mb-6">為了記錄投票，請先輸入您的姓名。</p>
       <input type="text" id="voter-name-input" placeholder="請在此輸入您的姓名" class="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" />
-      <button id="start-voting-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md mt-6 text-lg">開始投票</button>
+      <button type="button" id="start-voting-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md mt-6 text-lg">開始投票</button>
       <p id="name-validation-message" class="text-red-500 mt-2 h-5"></p>
     </div>
   </div>
@@ -45,8 +45,8 @@
           <div id="voter-name-display" class="text-xl font-semibold bg-blue-500 text-white px-4 py-2 rounded-lg">你好！</div>
         </div>
 
-        <div class="overflow-auto max-h-[70vh] pr-2">
-          <form id="voting-form">
+        <form id="voting-form">
+          <div class="overflow-auto max-h-[70vh] pr-2">
             <table class="w-full border-collapse text-sm md:text-base">
               <thead class="table-header-sticky">
                 <tr>
@@ -66,12 +66,12 @@
               </thead>
               <tbody id="voting-table-body"></tbody>
             </table>
-          </form>
-        </div>
-        <div class="mt-6 text-center">
-          <button id="submit-vote-btn" class="w-full md:w-auto bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">送出我的投票</button>
-          <p id="vote-validation-message" class="text-red-500 mt-2 h-5"></p>
-        </div>
+          </div>
+          <div class="mt-6 text-center">
+            <button type="submit" id="submit-vote-btn" class="w-full md:w-auto bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">送出我的投票</button>
+            <p id="vote-validation-message" class="text-red-500 mt-2 h-5"></p>
+          </div>
+        </form>
       </div>
 
       <!-- Results Section -->
@@ -82,7 +82,7 @@
         </div>
         <div class="mb-4 text-center bg-gray-100 p-4 rounded-lg">
           <p class="text-lg font-semibold">已完成投票人數</p>
-          <p class="text-3xl font-bold text-green-600"><span id="completed-voters-count">0</span> / 10</p>
+          <p class="text-3xl font-bold text-green-600"><span id="completed-voters-count">0</span> / <span id="total-voters-count">10</span></p>
         </div>
         <div class="mb-4">
           <h3 class="text-lg font-semibold text-gray-700 mb-2">已完成投票者：</h3>
@@ -120,7 +120,7 @@
     // ===== Firebase SDK =====
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     // 如啟用 App Check，解除下行註解並填入 site key：
     // import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
 
@@ -162,10 +162,22 @@
     let app, auth, db, userId, voterName;
     let latestResults = [];
     let completedVoterNames = new Set();
+    let votesCollectionRef = null;
+    let legacyVotesCollectionRef = null;
+    let snapshotUnsubscribes = [];
+    const snapshotSources = new Map();
     const SCORES = [1, 3, 5];
     const TOTAL_VOTERS = 10;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-poll-app';
-    const COLLECTION_NAME = `artifacts/${appId}/public/data/votes_poll_1`;
+    const rawAppId = (typeof __app_id !== 'undefined' && __app_id !== null) ? String(__app_id).trim() : '';
+    const fallbackAppId = (firebaseConfig && typeof firebaseConfig.projectId === 'string' && firebaseConfig.projectId.trim())
+      ? firebaseConfig.projectId.trim()
+      : 'default-poll-app';
+    const appId = (!rawAppId || rawAppId.includes('/')) ? fallbackAppId : rawAppId;
+    if (!rawAppId) {
+      console.warn(`偵測到缺少 __app_id，將使用 ${fallbackAppId} 作為資料儲存路徑。`);
+    } else if (rawAppId.includes('/')) {
+      console.warn(`提供的 __app_id 含有不支援的字元 "/"，將改用 ${fallbackAppId} 作為資料儲存路徑。`);
+    }
 
     // ===== DOM =====
     const nameOverlay = document.getElementById('name-entry-overlay');
@@ -183,13 +195,17 @@
     const summaryModal = document.getElementById('summary-modal');
     const closeSummaryBtn = document.getElementById('close-summary-btn');
     const summaryContent = document.getElementById('summary-content');
+    const totalVotersCount = document.getElementById('total-voters-count');
 
     // ===== 初始化 =====
-    function initialize() {
+    async function initialize() {
       renderVotingTable();
       renderResultsTable();
+      if (totalVotersCount) {
+        totalVotersCount.textContent = TOTAL_VOTERS;
+      }
       startBtn.addEventListener('click', handleStartVoting);
-      submitBtn.addEventListener('click', handleSubmitVote);
+      votingForm.addEventListener('submit', handleSubmitVote);
       showSummaryBtn.addEventListener('click', showSummary);
       closeSummaryBtn.addEventListener('click', () => summaryModal.classList.add('hidden'));
       summaryModal.addEventListener('click', (e) => { if (e.target === summaryModal) summaryModal.classList.add('hidden'); });
@@ -209,6 +225,15 @@
 
         auth = getAuth(app);
         db = getFirestore(app);
+        votesCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'votes_poll_1');
+        if (rawAppId && rawAppId !== appId) {
+          try {
+            legacyVotesCollectionRef = collection(db, `artifacts/${rawAppId}/public/data/votes_poll_1`);
+            console.info('已啟用舊版投票資料路徑，同步顯示既有的統計結果。');
+          } catch (legacyPathError) {
+            console.warn('無法載入舊版投票資料路徑:', legacyPathError);
+          }
+        }
         setupAuthListener();
       } catch (error) {
         console.error("Firebase 初始化失敗:", error);
@@ -237,13 +262,34 @@
 
     function setupRealtimeListener() {
       try {
-        const q = query(collection(db, COLLECTION_NAME));
-        onSnapshot(q, (querySnapshot) => {
-          processVoteData(querySnapshot);
-        }, (error) => {
-          console.error("即時監聽失敗:", error);
-          voteValidationMsg.textContent = '讀取結果失敗，請稍後再試。';
+        if (!votesCollectionRef) {
+          console.error('尚未建立投票資料的 Firestore 連線。');
+          voteValidationMsg.textContent = '系統尚未完成初始化，請重新整理或稍後再試。';
+          return;
+        }
+        snapshotUnsubscribes.forEach((unsub) => {
+          try { unsub(); } catch (unsubError) { console.warn('解除舊監聽時發生問題:', unsubError); }
         });
+        snapshotUnsubscribes = [];
+        snapshotSources.clear();
+
+        const registerSnapshot = (key, ref, onErrorMessage) => {
+          const unsubscribe = onSnapshot(ref, (querySnapshot) => {
+            snapshotSources.set(key, querySnapshot);
+            processVoteDataFromSnapshots();
+          }, (error) => {
+            console.error(onErrorMessage || '即時監聽失敗:', error);
+            if (key === 'primary') {
+              voteValidationMsg.textContent = '讀取結果失敗，請稍後再試。';
+            }
+          });
+          snapshotUnsubscribes.push(unsubscribe);
+        };
+
+        registerSnapshot('primary', votesCollectionRef);
+        if (legacyVotesCollectionRef) {
+          registerSnapshot('legacy', legacyVotesCollectionRef, '舊版路徑監聽失敗:');
+        }
       } catch (e) {
         console.error('建立監聽時發生錯誤', e);
       }
@@ -300,11 +346,20 @@
       const name = nameInput.value.trim();
       if (!name) { nameValidationMsg.textContent = '請務必輸入您的姓名。'; return; }
       if (completedVoterNames.has(name)) { nameValidationMsg.textContent = '這個姓名已經投過票了，請使用其他姓名。'; return; }
-      voterName = name; voterNameDisplay.textContent = `你好, ${voterName}`; nameOverlay.classList.add('hidden'); mainContent.classList.remove('hidden-opacity');
+      voterName = name; voterNameDisplay.textContent = `你好, ${voterName}`; nameValidationMsg.textContent = ''; nameOverlay.classList.add('hidden'); mainContent.classList.remove('hidden-opacity');
     }
 
-    async function handleSubmitVote() {
+    async function handleSubmitVote(event) {
+      event.preventDefault();
       voteValidationMsg.textContent = '';
+      if (!voterName) {
+        voteValidationMsg.textContent = '請先輸入姓名並開始投票。';
+        return;
+      }
+      if (!userId) {
+        voteValidationMsg.textContent = '系統正在連線中，請稍候再試。';
+        return;
+      }
       const formData = new FormData(votingForm);
       const currentScores = [];
       let isValid = true;
@@ -315,34 +370,49 @@
         currentScores.push({ importance: parseInt(importance), effectiveness: parseInt(effectiveness) });
       }
       if (!isValid) { voteValidationMsg.textContent = '錯誤：尚有項目未評分，請完成所有評分。'; return; }
+      if (!votesCollectionRef) {
+        voteValidationMsg.textContent = '系統尚未完成初始化，請重新整理或稍後再試。';
+        return;
+      }
       submitBtn.disabled = true; submitBtn.textContent = '正在提交...';
       try {
-        await addDoc(collection(db, COLLECTION_NAME), {
+        await addDoc(votesCollectionRef, {
           voterName: voterName,
           userId: userId,
           scores: currentScores,
           createdAt: serverTimestamp(),
         });
+        voteValidationMsg.textContent = '投票已送出，感謝您的參與！';
+        disableVotingForm();
       } catch (error) {
         console.error('提交投票失敗:', error);
-        voteValidationMsg.textContent = '提交失敗，請稍後再試。';
+        if (error && error.code === 'permission-denied') {
+          voteValidationMsg.textContent = '提交失敗：無法寫入資料，請確認 Firebase 安全性規則或 App Check 設定。';
+        } else if (error && error.code === 'invalid-argument') {
+          voteValidationMsg.textContent = '提交失敗：路徑設定無效，請確認 appId 設定是否正確。';
+        } else {
+          voteValidationMsg.textContent = '提交失敗，請稍後再試。';
+        }
         submitBtn.disabled = false; submitBtn.textContent = '送出我的投票';
       }
     }
 
-    function processVoteData(snapshot) {
+    function processVoteDataFromSnapshots() {
       const results = Array.from({ length: strategies.length }, () => ({ importance: 0, effectiveness: 0 }));
-      completedVoterNames.clear();
-      snapshot.forEach((doc) => {
-        const vote = doc.data();
-        if (vote.scores && vote.scores.length === strategies.length && vote.voterName) {
-          vote.scores.forEach((score, i) => {
-            results[i].importance += score.importance;
-            results[i].effectiveness += score.effectiveness;
-          });
-          completedVoterNames.add(vote.voterName);
-        }
+      const aggregatedNames = new Set();
+      snapshotSources.forEach((snapshot) => {
+        snapshot.forEach((doc) => {
+          const vote = doc.data();
+          if (vote.scores && vote.scores.length === strategies.length && vote.voterName) {
+            vote.scores.forEach((score, i) => {
+              results[i].importance += score.importance;
+              results[i].effectiveness += score.effectiveness;
+            });
+            aggregatedNames.add(vote.voterName);
+          }
+        });
       });
+      completedVoterNames = aggregatedNames;
       latestResults = results.map((res, index) => ({ ...strategies[index], importance: res.importance, effectiveness: res.effectiveness, total: res.importance + res.effectiveness }));
       updateResultsUI(results, completedVoterNames);
       if (voterName && completedVoterNames.has(voterName)) { disableVotingForm(); }
