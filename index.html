@@ -26,7 +26,7 @@
       <h2 class="text-2xl font-bold text-gray-800 mb-4">歡迎參與投票</h2>
       <p class="text-gray-600 mb-6">為了記錄投票，請先輸入您的姓名。</p>
       <input type="text" id="voter-name-input" placeholder="請在此輸入您的姓名" class="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" />
-      <button id="start-voting-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md mt-6 text-lg">開始投票</button>
+      <button type="button" id="start-voting-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md mt-6 text-lg">開始投票</button>
       <p id="name-validation-message" class="text-red-500 mt-2 h-5"></p>
     </div>
   </div>
@@ -69,7 +69,7 @@
           </form>
         </div>
         <div class="mt-6 text-center">
-          <button id="submit-vote-btn" class="w-full md:w-auto bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">送出我的投票</button>
+          <button type="submit" id="submit-vote-btn" class="w-full md:w-auto bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">送出我的投票</button>
           <p id="vote-validation-message" class="text-red-500 mt-2 h-5"></p>
         </div>
       </div>
@@ -120,7 +120,7 @@
     // ===== Firebase SDK =====
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     // 如啟用 App Check，解除下行註解並填入 site key：
     // import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
 
@@ -162,16 +162,19 @@
     let app, auth, db, userId, voterName;
     let latestResults = [];
     let completedVoterNames = new Set();
+    let votesCollectionRef = null;
     const SCORES = [1, 3, 5];
     const TOTAL_VOTERS = 10;
     const rawAppId = (typeof __app_id !== 'undefined' && __app_id !== null) ? String(__app_id).trim() : '';
-    const appId = (!rawAppId || rawAppId.includes('/')) ? 'default-poll-app' : rawAppId;
+    const fallbackAppId = (firebaseConfig && typeof firebaseConfig.projectId === 'string' && firebaseConfig.projectId.trim())
+      ? firebaseConfig.projectId.trim()
+      : 'default-poll-app';
+    const appId = (!rawAppId || rawAppId.includes('/')) ? fallbackAppId : rawAppId;
     if (!rawAppId) {
-      console.warn('偵測到缺少 __app_id，將使用預設路徑 default-poll-app。');
+      console.warn(`偵測到缺少 __app_id，將使用 ${fallbackAppId} 作為資料儲存路徑。`);
     } else if (rawAppId.includes('/')) {
-      console.warn('提供的 __app_id 含有不支援的字元 "/"，將使用預設路徑 default-poll-app。');
+      console.warn(`提供的 __app_id 含有不支援的字元 "/"，將改用 ${fallbackAppId} 作為資料儲存路徑。`);
     }
-    const COLLECTION_NAME = `artifacts/${appId}/public/data/votes_poll_1`;
 
     // ===== DOM =====
     const nameOverlay = document.getElementById('name-entry-overlay');
@@ -199,7 +202,7 @@
         totalVotersCount.textContent = TOTAL_VOTERS;
       }
       startBtn.addEventListener('click', handleStartVoting);
-      submitBtn.addEventListener('click', handleSubmitVote);
+      votingForm.addEventListener('submit', handleSubmitVote);
       showSummaryBtn.addEventListener('click', showSummary);
       closeSummaryBtn.addEventListener('click', () => summaryModal.classList.add('hidden'));
       summaryModal.addEventListener('click', (e) => { if (e.target === summaryModal) summaryModal.classList.add('hidden'); });
@@ -219,6 +222,7 @@
 
         auth = getAuth(app);
         db = getFirestore(app);
+        votesCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'votes_poll_1');
         setupAuthListener();
       } catch (error) {
         console.error("Firebase 初始化失敗:", error);
@@ -247,8 +251,12 @@
 
     function setupRealtimeListener() {
       try {
-        const q = query(collection(db, COLLECTION_NAME));
-        onSnapshot(q, (querySnapshot) => {
+        if (!votesCollectionRef) {
+          console.error('尚未建立投票資料的 Firestore 連線。');
+          voteValidationMsg.textContent = '系統尚未完成初始化，請重新整理或稍後再試。';
+          return;
+        }
+        onSnapshot(votesCollectionRef, (querySnapshot) => {
           processVoteData(querySnapshot);
         }, (error) => {
           console.error("即時監聽失敗:", error);
@@ -313,7 +321,8 @@
       voterName = name; voterNameDisplay.textContent = `你好, ${voterName}`; nameValidationMsg.textContent = ''; nameOverlay.classList.add('hidden'); mainContent.classList.remove('hidden-opacity');
     }
 
-    async function handleSubmitVote() {
+    async function handleSubmitVote(event) {
+      event.preventDefault();
       voteValidationMsg.textContent = '';
       if (!voterName) {
         voteValidationMsg.textContent = '請先輸入姓名並開始投票。';
@@ -333,10 +342,13 @@
         currentScores.push({ importance: parseInt(importance), effectiveness: parseInt(effectiveness) });
       }
       if (!isValid) { voteValidationMsg.textContent = '錯誤：尚有項目未評分，請完成所有評分。'; return; }
+      if (!votesCollectionRef) {
+        voteValidationMsg.textContent = '系統尚未完成初始化，請重新整理或稍後再試。';
+        return;
+      }
       submitBtn.disabled = true; submitBtn.textContent = '正在提交...';
       try {
-        await addDoc(collection(db, COLLECTION_NAME), {
-          appId: appId,
+        await addDoc(votesCollectionRef, {
           voterName: voterName,
           userId: userId,
           scores: currentScores,
